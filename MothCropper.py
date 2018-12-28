@@ -196,9 +196,13 @@ class CropDirectoryThread(QThread):
         self.path = path
         self.radius = radius
         self.padding = padding
+        self.running = True
 
     def __del__(self):
         self.wait()
+
+    def stop(self):
+        self.running = False
 
     def run(self):
         files = glob.glob(os.path.join(self.path, "*.bmp"))
@@ -211,6 +215,9 @@ class CropDirectoryThread(QThread):
 
         i = 0
         for file in files:
+            if not self.running:
+                break
+
             if(os.path.isfile(file) and not file.endswith('-cropped.jpg')):
                 result = crop_image(file, self.radius, self.padding)
                 self.display.emit(result)
@@ -364,17 +371,20 @@ class MothCropper(QMainWindow):
 
     def signalCancel(self):
         if self.thread:
-            self.thread.terminate()
+            self.thread.stop()
+            self.thread.wait()
             self.thread = None
         if self.progdialog:
             self.progdialog.close()
             self.progdialog = None
 
     def signalImageCount(self, count):
-        self.progdialog.setMaximum(count)
+        if self.progdialog:
+            self.progdialog.setMaximum(count)
 
     def signalProgress(self, value):
-        self.progdialog.setValue(value)
+        if self.progdialog:
+            self.progdialog.setValue(value)
 
     def signalComplete(self):
         if self.progdialog:
