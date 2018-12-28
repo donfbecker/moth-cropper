@@ -185,6 +185,60 @@ def crop_image(filename, radius=3, padding=0.05):
 
     return crop_path
 
+class CropDirectoryThread(QThread):
+    count = pyqtSignal(int)
+    display = pyqtSignal('QString')
+    progress = pyqtSignal(int)
+    complete = pyqtSignal()
+
+    def __init__(self, path, radius, padding):
+        QThread.__init__(self)
+        self.path = path
+        self.radius = radius
+        self.padding = padding
+
+    def __del__(self):
+        self.wait()
+
+    def run(self):
+        files = glob.glob(os.path.join(self.path, "*.bmp"))
+        files.extend(glob.glob(os.path.join(self.path, "*.gif")))
+        files.extend(glob.glob(os.path.join(self.path, "*.jpg")))
+        files.extend(glob.glob(os.path.join(self.path, "*.jpeg")))
+        files.extend(glob.glob(os.path.join(self.path, "*.png")))
+
+        self.count.emit(len(files))
+
+        i = 0
+        for file in files:
+            if(os.path.isfile(file) and not file.endswith('-cropped.jpg')):
+                result = crop_image(file, self.radius, self.padding)
+                self.display.emit(result)
+
+            self.progress.emit(i)
+            i += 1
+
+        self.complete.emit()
+        print("CropDirectoryThread finished.")
+
+class CropImageThread(QThread):
+    display = pyqtSignal('QString')
+    complete = pyqtSignal()
+
+    def __init__(self, path, radius, padding):
+        QThread.__init__(self)
+        self.path = path
+        self.radius = radius
+        self.padding = padding
+
+    def __del__(self):
+        self.wait()
+
+    def run(self):
+        result = crop_image(self.path, self.radius, self.padding)
+        self.display.emit(result)
+        self.complete.emit()
+
 class ImageLabel(QLabel):
     def __init__(self, image):
         super(ImageLabel, self).__init__("")
@@ -204,6 +258,9 @@ class ImageLabel(QLabel):
         return self.pixmap.height()
 
 class MothCropper(QMainWindow):
+    progdialog = None
+    thread = None
+
     def __init__(self):
         super(MothCropper, self).__init__()
         self.setAcceptDrops(True)
@@ -217,7 +274,11 @@ class MothCropper(QMainWindow):
 
     def dropEvent(self, e):
         path = str(e.mimeData().urls()[0].toLocalFile())
-        self.cropAndDisplayImage(path)
+
+        if os.path.isdir(path):
+            self.cropDirectory(path)
+        else:
+            self.cropAndDisplayImage(path)
 
     def initUI(self):
         self.setWindowTitle("Moth Cropper")
@@ -235,7 +296,7 @@ class MothCropper(QMainWindow):
         directoryAct = QAction('Crop &Directory', self)
         directoryAct.setShortcut('Ctrl+D')
         directoryAct.setStatusTip('Crop all images in a directory')
-        directoryAct.triggered.connect(self.cropDirectory)
+        directoryAct.triggered.connect(self.menuCropDirectory)
 
         exitAct = QAction('&Exit', self)
         exitAct.setShortcut('Ctrl+Q')
@@ -284,18 +345,41 @@ class MothCropper(QMainWindow):
     def resizeUI(self):
         self.resize(self.label.width(), self.label.height() + self.menuBar().height());
 
+    def displayImage(self, path):
+        self.label.setImage(path)
+        self.resizeUI()
+
     def cropAndDisplayImage(self, path):
+        self.displayImage(path)
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
         radius = self.radius.value()
-        padding = self.padding.value()
-        cropped_path = crop_image(path, radius, padding / 100)
+        padding = self.padding.value() / 100
 
-        self.label.setImage(cropped_path)
-        self.resizeUI()
-
-        QApplication.restoreOverrideCursor()
+        self.thread = CropImageThread(path, radius, padding)
+        self.thread.display.connect(self.displayImage)
+        self.thread.complete.connect(self.signalComplete)
+        self.thread.start()
         return
+
+    def signalCancel(self):
+        if self.thread:
+            self.thread.terminate()
+            self.thread = None
+        if self.progdialog:
+            self.progdialog.close()
+            self.progdialog = None
+
+    def signalImageCount(self, count):
+        self.progdialog.setMaximum(count)
+
+    def signalProgress(self, value):
+        self.progdialog.setValue(value)
+
+    def signalComplete(self):
+        if self.progdialog:
+            self.progdialog.close()
+        QApplication.restoreOverrideCursor()
 
     def cropImage(self):
         path = QFileDialog.getOpenFileName(self, "Choose an image", "", "Images (*.bmp *.gif *.jpg *.jpeg *.png)")
@@ -303,40 +387,27 @@ class MothCropper(QMainWindow):
             self.cropAndDisplayImage(path[0])
         return
 
-    def cropDirectory(self):
+    def cropDirectory(self, path):
+        radius = self.radius.value()
+        padding = self.padding.value() / 100
+
+        self.progdialog = QProgressDialog("", "Cancel", 0, 100, self)
+        self.progdialog.setWindowTitle("Cropping")
+        self.progdialog.setWindowModality(Qt.WindowModal)
+        self.progdialog.canceled.connect(self.signalCancel)
+        self.progdialog.show()
+
+        self.thread = CropDirectoryThread(path, radius, padding)
+        self.thread.count.connect(self.signalImageCount)
+        self.thread.display.connect(self.displayImage)
+        self.thread.progress.connect(self.signalProgress)
+        self.thread.complete.connect(self.signalComplete)
+        self.thread.start()
+
+    def menuCropDirectory(self):
         path = QFileDialog.getExistingDirectory(self, "Choose a directory", "", QFileDialog.ShowDirsOnly)
         if(path):
-            files = glob.glob(os.path.join(path, "*.bmp"))
-            files.extend(glob.glob(os.path.join(path, "*.gif")))
-            files.extend(glob.glob(os.path.join(path, "*.jpg")))
-            files.extend(glob.glob(os.path.join(path, "*.jpeg")))
-            files.extend(glob.glob(os.path.join(path, "*.png")))
-
-            files.sort()
-
-            progdialog = QProgressDialog("", "Cancel", 0, len(files), self)
-            progdialog.setWindowTitle("Cropping")
-            progdialog.setWindowModality(Qt.WindowModal)
-            progdialog.show()
-
-            i = 0
-            for file in files:
-                if progdialog.wasCanceled():
-                    break
-
-                radius = self.radius.value()
-                padding = self.padding.value()
-
-                if(os.path.isfile(file) and not file.endswith('-cropped.jpg')):
-                    print(file)
-                    cropped_path = crop_image(file, radius, padding / 100)
-
-                progdialog.setValue(i)
-                i += 1
-
-            progdialog.close()
-
-        return
+            cropDirectory(path)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
