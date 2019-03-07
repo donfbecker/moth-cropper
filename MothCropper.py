@@ -273,6 +273,9 @@ class MothCropper(QMainWindow):
         self.setAcceptDrops(True)
         self.initUI()
 
+    def closeEvent(self, e):
+        self.quit()
+
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls:
             e.accept()
@@ -286,6 +289,10 @@ class MothCropper(QMainWindow):
             self.cropDirectory(path)
         else:
             self.cropAndDisplayImage(path)
+
+    def quit(self):
+        app.quit()
+        sys.exit()
 
     def initUI(self):
         self.setWindowTitle("Moth Cropper")
@@ -308,7 +315,7 @@ class MothCropper(QMainWindow):
         exitAct = QAction('&Exit', self)
         exitAct.setShortcut('Ctrl+Q')
         exitAct.setStatusTip('Exit application')
-        exitAct.triggered.connect(qApp.quit)
+        exitAct.triggered.connect(self.quit)
 
         menubar = self.menuBar()
         fileMenu = menubar.addMenu('&File')
@@ -417,7 +424,7 @@ class MothCropper(QMainWindow):
     def menuCropDirectory(self):
         path = QFileDialog.getExistingDirectory(self, "Choose a directory", "", QFileDialog.ShowDirsOnly)
         if(path):
-            cropDirectory(path)
+            self.cropDirectory(path)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
