@@ -9,6 +9,8 @@ import os
 import shutil
 import sys
 
+import piexif
+
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
@@ -103,6 +105,10 @@ def getSheetBBox(img, radius):
     return top, left, bottom, right
 
 def crop_image(filename, radius=3, padding=0.05):
+    result_path = os.path.join(os.path.dirname(filename), "cropped")
+    if not os.path.isdir(result_path):
+        os.mkdir(result_path)
+
     img = cv2.imread(filename)
     full_height, full_width = img.shape[:2]
 
@@ -180,8 +186,10 @@ def crop_image(filename, radius=3, padding=0.05):
     crop = img[top:bottom, left:right]
     crop = cv2.resize(crop, (600, 600))
 
-    crop_path = os.path.splitext(filename)[0] + "-cropped.jpg"
+
+    crop_path = os.path.join(result_path, os.path.basename(os.path.splitext(filename)[0]) + "-cropped.jpg");
     cv2.imwrite(crop_path, crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    piexif.transplant(filename, crop_path);
 
     return crop_path
 
