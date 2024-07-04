@@ -106,8 +106,11 @@ def getSheetBBox(img, radius):
 
 def crop_image(filename, radius=3, padding=0.05):
     result_path = os.path.join(os.path.dirname(filename), "cropped")
+    error_path = os.path.join(os.path.dirname(filename), "uncroppable")
     if not os.path.isdir(result_path):
         os.mkdir(result_path)
+    if not os.path.isdir(error_path):
+        os.mkdir(error_path)
 
     img = cv2.imread(filename)
     full_height, full_width = img.shape[:2]
@@ -184,14 +187,18 @@ def crop_image(filename, radius=3, padding=0.05):
     right = int(right)
 
     crop = img[top:bottom, left:right]
-    crop = cv2.resize(crop, (600, 600))
 
-
-    crop_path = os.path.join(result_path, os.path.basename(os.path.splitext(filename)[0]) + "-cropped.jpg");
-    cv2.imwrite(crop_path, crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-    piexif.transplant(filename, crop_path);
-
-    return crop_path
+    try:
+        crop = cv2.resize(crop, (600, 600))
+        crop_path = os.path.join(result_path, os.path.basename(os.path.splitext(filename)[0]) + "-cropped.jpg")
+        cv2.imwrite(crop_path, crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        piexif.transplant(filename, crop_path);
+        return crop_path
+    except:
+        dest_path = os.path.join(error_path, os.path.basename(os.path.splitext(filename)[0]) + "-uncroppable.jpg")
+        cv2.imwrite(dest_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        piexif.transplant(filename, dest_path)
+        return dest_path
 
 class CropDirectoryThread(QThread):
     count = pyqtSignal(int)
